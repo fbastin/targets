@@ -303,6 +303,12 @@ function generateTarget() {
         doc.text(pageTitle, 10, height - 10);
     }
 
+    // Add tireur.org watermark in italic at the bottom right
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text("tireur.org", width - 10, height - 10, { align: "right" });
+
     doc.save(`Target_${targetType}.pdf`);
 }
 
