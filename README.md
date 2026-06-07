@@ -1,4 +1,4 @@
-# tireur-targets
+# Printable Targets
 
 A JavaScript library to dynamically generate vector PDF shooting targets (ISSF, MOA checkers, optical crosses, etc.) directly in the browser using [jsPDF](https://github.com/parallax/jsPDF).
 
