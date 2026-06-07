@@ -1,0 +1,328 @@
+/**
+ * Tireur.org Target Generator Library
+ * Generates vector PDF shooting targets (ISSF, MOA, etc.) using jsPDF.
+ */
+
+// Official ISSF Diameters (mm), from zone 1 (outer) to zone 10 (center).
+// dist = official distance (m) ; reducible = available for reduced shooting distances.
+const ISSF = {
+    issf_50m: {
+        title: "Cible ISSF 50 m Carabine",
+        diams: [154.4, 138.4, 122.4, 106.4, 90.4, 74.4, 58.4, 42.4, 26.4, 10.4],
+        black: 112.4, // black zone (zones 4 to 10)
+        innerTen: 5.0,
+        numFont: 9,
+        dist: 50,
+        reducible: true
+    },
+    issf_10m: {
+        title: "Cible ISSF 10 m Pistolet (air comprimé)",
+        diams: [155.5, 139.5, 123.5, 107.5, 91.5, 75.5, 59.5, 43.5, 27.5, 11.5],
+        black: 59.5, // black zone (zones 7 to 10)
+        innerTen: 5.0,
+        numFont: 9,
+        dist: 10,
+        reducible: false
+    },
+    issf_10m_rifle: {
+        title: "Cible ISSF 10 m Carabine (air comprimé)",
+        diams: [45.5, 40.5, 35.5, 30.5, 25.5, 20.5, 15.5, 10.5, 5.5, 0.5],
+        black: 30.5,   // black zone (zones 4 to 9)
+        innerTen: 0,   // no inner ten visible : zone 10 is already 0.5 mm
+        numFont: 5,    // very small target (Ø 45.5 mm) : smaller font
+        dist: 10,
+        reducible: false
+    }
+};
+
+// Reduced shooting distances for ISSF 50m (1 yard = 0.9144 m).
+const REDUCED_50M = [
+    { v: 50,    label: "Taille réelle — 50 m" },
+    { v: 45.72, label: "50 yards (45,7 m)" },
+    { v: 25,    label: "25 m" },
+    { v: 22.86, label: "25 yards (22,9 m)" },
+    { v: 18.29, label: "20 yards (18,3 m)" }
+];
+
+// Distances for MOA target (checkers) : absolute size of the square.
+const MOA_DISTANCES = [
+    { v: 25,  label: "25 m" },
+    { v: 50,  label: "50 m" },
+    { v: 100, label: "100 m", sel: true },
+    { v: 200, label: "200 m" },
+    { v: 300, label: "300 m" }
+];
+
+// Zone numbers (1 to 8) placed on the 4 axes, in the band of each zone.
+function drawRingNumbers(doc, cx, cy, diams, blackDiam, fontSize) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(fontSize || 9);
+    for (let k = 0; k < 8; k++) {
+        const value = k + 1;
+        const rMid = (diams[k] / 2 + diams[k + 1] / 2) / 2; // middle of the ring
+        const onBlack = (2 * rMid) <= blackDiam;
+        doc.setTextColor(onBlack ? 255 : 0, onBlack ? 255 : 0, onBlack ? 255 : 0);
+        const s = String(value);
+        const opt = { align: "center", baseline: "middle" };
+        doc.text(s, cx - rMid, cy, opt);
+        doc.text(s, cx + rMid, cy, opt);
+        doc.text(s, cx, cy - rMid, opt);
+        doc.text(s, cx, cy + rMid, opt);
+    }
+    doc.setTextColor(0, 0, 0);
+}
+
+// Outer diameter (mm) of an ISSF target at a given scale.
+function issfOuterDiameter(spec, scale) {
+    return spec.diams[0] * (scale || 1);
+}
+
+// Draws an ISSF target centered at (ox, oy). Title placed above the target.
+function drawISSFAt(doc, ox, oy, spec, scale, titleFont) {
+    const s = scale || 1;
+    const diams = spec.diams.map(d => d * s);
+    const black = spec.black * s;
+    const innerTen = spec.innerTen * s;
+    const numFont = Math.max(4, Math.min(spec.numFont, spec.numFont * s));
+
+    // Title (mentioning reduction if applicable), above the target
+    let title = spec.title;
+    if (s !== 1) title += ` — ${Math.round(s * 100)}% (tir à ${fmtMeters(spec.dist * s)} m)`;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(titleFont || 12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(title, ox, oy - diams[0] / 2 - 3, { align: "center" });
+
+    // Black aiming zone
+    doc.setFillColor(0, 0, 0);
+    doc.circle(ox, oy, black / 2, 'F');
+
+    // Rings : white on black, black on white
+    doc.setLineWidth(0.2);
+    for (let i = 0; i < diams.length; i++) {
+        if (diams[i] <= black) doc.setDrawColor(255, 255, 255);
+        else doc.setDrawColor(0, 0, 0);
+        doc.circle(ox, oy, diams[i] / 2, 'S');
+    }
+
+    // Inner ten (fine circle, in the black) — center remains black, ISSF compliant
+    if (innerTen > 0) {
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.15);
+        doc.circle(ox, oy, innerTen / 2, 'S');
+    }
+
+    drawRingNumbers(doc, ox, oy, diams, black, numFont);
+}
+
+// Draws a checkers target (1 MOA) centered at (ox, oy) for a given distance (m).
+function drawCheckersAt(doc, ox, oy, distance, titleFont) {
+    const size = distance * 0.2908882; // 1 MOA ≈ 0.2908882 mm/m
+    const sizeLabel = size.toFixed(1).replace('.', ',');
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(titleFont || 12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Damier - 1 MOA a ${fmtMeters(distance)} m (${sizeLabel} mm)`, ox, oy - size - 3, { align: "center" });
+
+    doc.setFillColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.4);
+    doc.rect(ox - size, oy - size, size, size, 'F'); // top left
+    doc.rect(ox, oy - size, size, size, 'S');         // top right
+    doc.rect(ox - size, oy, size, size, 'S');         // bottom left
+    doc.rect(ox, oy, size, size, 'F');                // bottom right
+
+    doc.setFillColor(255, 0, 0);
+    doc.circle(ox, oy, 1.5, 'F');
+}
+
+// Optical sighting cross : fills the whole page (1 per sheet).
+function drawCrossFull(doc, width, height) {
+    const cx = width / 2, cy = height / 2;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text("Croix de reglage optique (grille 1 cm)", cx, 30, { align: "center" });
+
+    // Centered 1 cm grid (light gray), drawn first
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.2);
+    const top = 40, bottom = height - 20, left = 10, right = width - 10;
+    for (let x = cx; x <= right; x += 10) doc.line(x, top, x, bottom);
+    for (let x = cx - 10; x >= left; x -= 10) doc.line(x, top, x, bottom);
+    for (let y = cy; y <= bottom; y += 10) doc.line(left, y, right, y);
+    for (let y = cy - 10; y >= top; y -= 10) doc.line(left, y, right, y);
+
+    // Fine precision cross (100 mm) over it
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.4);
+    doc.line(cx - 50, cy, cx + 50, cy);
+    doc.line(cx, cy - 50, cx, cy + 50);
+
+    // Central aiming point
+    doc.setFillColor(255, 0, 0);
+    doc.circle(cx, cy, 1.5, 'F');
+}
+
+// Calibration rule + printing warning (once per page).
+function drawPageHeader(doc, width) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+    doc.text("VERIFICATION D'ECHELLE :", 10, 10);
+    doc.text("Ce segment doit mesurer exactement 5 cm", 10, 14);
+
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(0, 0, 0);
+    doc.line(10, 16, 60, 16); // main line
+    for (let i = 0; i <= 5; i++) {
+        const x = 10 + i * 10;
+        doc.line(x, 14, x, 18); // tick every cm
+    }
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("ATTENTION : IMPRIMEZ A TAILLE REELLE (100%)", width - 10, 10, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text("Ne pas utiliser 'Ajuster a la page' dans les parametres.", width - 10, 14, { align: "right" });
+}
+
+// Available layouts : number of targets -> [columns, rows].
+const LAYOUTS = { 1: [1, 1], 2: [1, 2], 4: [2, 2], 6: [2, 3], 9: [3, 3] };
+
+function generateTarget() {
+    const { jsPDF } = window.jspdf;
+
+    const targetType = document.getElementById('targetType').value;
+    const paperFormat = document.getElementById('paperFormat').value;
+    const perPage = parseInt(document.getElementById('layout').value, 10) || 1;
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: paperFormat });
+    const width = doc.internal.pageSize.getWidth();
+    const height = doc.internal.pageSize.getHeight();
+
+    drawPageHeader(doc, width);
+
+    // Cross always fills the page : 1 per sheet.
+    if (targetType === 'cross') {
+        drawCrossFull(doc, width, height);
+        doc.save(`TireurOrg_Cible_${targetType}.pdf`);
+        return;
+    }
+
+    // Prepares the target drawing function and its bounding size (outer diameter).
+    let extent, drawOne;
+    if (ISSF[targetType]) {
+        const spec = ISSF[targetType];
+        let scale = 1;
+        if (spec.reducible) {
+            const d = getSelectedDistanceMeters() || spec.dist;
+            scale = d / spec.dist;
+        }
+        extent = issfOuterDiameter(spec, scale);
+        drawOne = (ox, oy, tf) => drawISSFAt(doc, ox, oy, spec, scale, tf);
+    } else { // checkers
+        const distance = getSelectedDistanceMeters() || 100;
+        extent = 2 * distance * 0.2908882;
+        drawOne = (ox, oy, tf) => drawCheckersAt(doc, ox, oy, distance, tf);
+    }
+
+    const [cols, rows] = LAYOUTS[perPage] || [1, 1];
+    const cellW = width / cols, cellH = height / rows;
+    const needed = extent + 12; // title margin + border
+
+    if (needed > Math.min(cellW, cellH)) {
+        alert("La cible est trop grande pour " + perPage + " par page.\n" +
+              "Choisissez moins de cibles par page, une distance réduite ou une cible plus petite.");
+        return;
+    }
+
+    const titleFont = (perPage > 1) ? 8 : 12;
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            drawOne(cellW * (c + 0.5), cellH * (r + 0.5), titleFont);
+        }
+    }
+
+    doc.save(`TireurOrg_Cible_${targetType}.pdf`);
+}
+
+// Formats a distance in meters (French decimal separator, without unnecessary zero).
+function fmtMeters(m) {
+    return (Math.round(m * 10) / 10).toString().replace('.', ',');
+}
+
+// Selected shooting distance, converted to meters (handles custom option).
+function getSelectedDistanceMeters() {
+    const sel = document.getElementById('distance');
+    if (sel.value === 'custom') {
+        const v = parseFloat(document.getElementById('customDistance').value) || 0;
+        const factor = parseFloat(document.getElementById('customUnit').value) || 1;
+        return v * factor;
+    }
+    return parseFloat(sel.value) || 0;
+}
+
+// Displays the custom distance field when the corresponding option is chosen.
+function updateCustomVisibility() {
+    const sel = document.getElementById('distance');
+    document.getElementById('customGroup').style.display = (sel.value === 'custom') ? 'flex' : 'none';
+}
+
+// Displays and populates the distance selector according to the target type.
+function updateDistanceVisibility() {
+    const type = document.getElementById('targetType').value;
+    const group = document.getElementById('distanceGroup');
+    const sel = document.getElementById('distance');
+    const label = document.getElementById('distanceLabel');
+    const note = document.getElementById('distanceNote');
+
+    // The cross always fills the page : no multiple layout.
+    document.getElementById('layoutGroup').style.display = (type === 'cross') ? 'none' : 'block';
+
+    let opts = null, labelText = '', noteText = '';
+    if (type === 'checkers') {
+        opts = MOA_DISTANCES;
+        labelText = "Distance de tir (cible MOA) :";
+        noteText = "Chaque carreau représente 1 MOA à la distance choisie.";
+    } else if (ISSF[type] && ISSF[type].reducible) {
+        opts = REDUCED_50M;
+        labelText = "Distance de tir (cible réduite) :";
+        noteText = "La cible est mise à l'échelle pour conserver la même difficulté angulaire qu'à la distance officielle.";
+    } else {
+        group.style.display = 'none';
+        return;
+    }
+
+    let html = opts.map(o => `<option value="${o.v}"${o.sel ? ' selected' : ''}>${o.label}</option>`).join('');
+    html += '<option value="custom">Personnalisée…</option>';
+    sel.innerHTML = html;
+    label.textContent = labelText;
+    note.textContent = noteText;
+    group.style.display = 'block';
+    updateCustomVisibility();
+}
+
+// Initialize when the DOM is loaded
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', updateDistanceVisibility);
+}
+
+// Export functions and constants for potential use in a module environment
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        ISSF,
+        REDUCED_50M,
+        MOA_DISTANCES,
+        drawRingNumbers,
+        issfOuterDiameter,
+        drawISSFAt,
+        drawCheckersAt,
+        drawCrossFull,
+        drawPageHeader,
+        generateTarget,
+        fmtMeters
+    };
+}
