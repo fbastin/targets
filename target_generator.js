@@ -5,9 +5,9 @@
 
 const I18N = {
     fr: {
-        issf_50m: "Cible ISSF 50 m Carabine",
-        issf_10m: "Cible ISSF 10 m Pistolet (air comprimé)",
-        issf_10m_rifle: "Cible ISSF 10 m Carabine (air comprimé)",
+        issf_50m: "50 m Carabine",
+        issf_10m: "10 m Pistolet (air comprimé)",
+        issf_10m_rifle: "10 m Carabine (air comprimé)",
         actual_size: "Taille réelle — 50 m",
         custom_dist: "Personnalisée…",
         checkers_title: "Damier - 1 MOA a",
@@ -23,9 +23,9 @@ const I18N = {
         reduced_note: "La cible est mise à l'échelle pour conserver la même difficulté angulaire qu'à la distance officielle."
     },
     en: {
-        issf_50m: "50m ISSF Rifle Target",
-        issf_10m: "10m ISSF Air Pistol Target",
-        issf_10m_rifle: "10m ISSF Air Rifle Target",
+        issf_50m: "50m Rifle",
+        issf_10m: "10m Air Pistol",
+        issf_10m_rifle: "10m Air Rifle",
         actual_size: "Actual Size — 50 m",
         custom_dist: "Custom…",
         checkers_title: "Checkers - 1 MOA at",
@@ -135,21 +135,13 @@ function issfOuterDiameter(spec, scale) {
     return spec.diams[0] * (scale || 1);
 }
 
-// Draws an ISSF target centered at (ox, oy). Title placed above the target.
-function drawISSFAt(doc, ox, oy, spec, scale, titleFont) {
+// Draws an ISSF target centered at (ox, oy).
+function drawISSFAt(doc, ox, oy, spec, scale) {
     const s = scale || 1;
     const diams = spec.diams.map(d => d * s);
     const black = spec.black * s;
     const innerTen = spec.innerTen * s;
     const numFont = Math.max(4, Math.min(spec.numFont, spec.numFont * s));
-
-    // Title (mentioning reduction if applicable), above the target
-    let title = t(spec.titleKey);
-    if (s !== 1) title += ` — ${Math.round(s * 100)}% (tir à ${fmtMeters(spec.dist * s)} m)`;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(titleFont || 12);
-    doc.setTextColor(0, 0, 0);
-    doc.text(title, ox, oy - diams[0] / 2 - 3, { align: "center" });
 
     // Black aiming zone
     doc.setFillColor(0, 0, 0);
@@ -174,14 +166,8 @@ function drawISSFAt(doc, ox, oy, spec, scale, titleFont) {
 }
 
 // Draws a checkers target (1 MOA) centered at (ox, oy) for a given distance (m).
-function drawCheckersAt(doc, ox, oy, distance, titleFont) {
+function drawCheckersAt(doc, ox, oy, distance) {
     const size = distance * 0.2908882; // 1 MOA ≈ 0.2908882 mm/m
-    const sizeLabel = currentLang === 'fr' ? size.toFixed(1).replace('.', ',') : size.toFixed(1);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(titleFont || 12);
-    doc.setTextColor(0, 0, 0);
-    doc.text(`${t('checkers_title')} ${fmtMeters(distance)} m (${sizeLabel} mm)`, ox, oy - size - 3, { align: "center" });
 
     doc.setFillColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
@@ -271,7 +257,7 @@ function generateTarget() {
     }
 
     // Prepares the target drawing function and its bounding size (outer diameter).
-    let extent, drawOne;
+    let extent, drawOne, pageTitle = "";
     if (ISSF[targetType]) {
         const spec = ISSF[targetType];
         let scale = 1;
@@ -279,12 +265,19 @@ function generateTarget() {
             const d = getSelectedDistanceMeters() || spec.dist;
             scale = d / spec.dist;
         }
+        pageTitle = t(spec.titleKey);
+        if (scale !== 1) pageTitle += ` — ${Math.round(scale * 100)}% (tir à ${fmtMeters(spec.dist * scale)} m)`;
+        
         extent = issfOuterDiameter(spec, scale);
-        drawOne = (ox, oy, tf) => drawISSFAt(doc, ox, oy, spec, scale, tf);
+        drawOne = (ox, oy) => drawISSFAt(doc, ox, oy, spec, scale);
     } else { // checkers
         const distance = getSelectedDistanceMeters() || 100;
+        const size = distance * 0.2908882;
+        const sizeLabel = currentLang === 'fr' ? size.toFixed(1).replace('.', ',') : size.toFixed(1);
+        pageTitle = `${t('checkers_title')} ${fmtMeters(distance)} m (${sizeLabel} mm)`;
+        
         extent = 2 * distance * 0.2908882;
-        drawOne = (ox, oy, tf) => drawCheckersAt(doc, ox, oy, distance, tf);
+        drawOne = (ox, oy) => drawCheckersAt(doc, ox, oy, distance);
     }
 
     const [cols, rows] = LAYOUTS[perPage] || [1, 1];
@@ -296,11 +289,18 @@ function generateTarget() {
         return;
     }
 
-    const titleFont = (perPage > 1) ? 8 : 12;
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-            drawOne(cellW * (c + 0.5), cellH * (r + 0.5), titleFont);
+            drawOne(cellW * (c + 0.5), cellH * (r + 0.5));
         }
+    }
+
+    // Write title once at the bottom left
+    if (pageTitle) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
+        doc.text(pageTitle, 10, height - 10);
     }
 
     doc.save(`Target_${targetType}.pdf`);
