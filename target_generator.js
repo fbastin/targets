@@ -6,8 +6,8 @@
 const I18N = {
     fr: {
         issf_50m: "50 m Carabine",
-        issf_10m: "10 m Pistolet (air comprimé)",
-        issf_10m_rifle: "10 m Carabine (air comprimé)",
+        issf_10m: "10 m Pistolet",
+        issf_10m_rifle: "10 m Carabine",
         actual_size: "Taille réelle — 50 m",
         custom_dist: "Personnalisée…",
         checkers_title: "Damier - 1 MOA a",
