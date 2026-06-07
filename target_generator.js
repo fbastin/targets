@@ -11,7 +11,7 @@ const I18N = {
         actual_size: "Taille réelle — 50 m",
         custom_dist: "Personnalisée…",
         checkers_title: "Damier - 1 MOA a",
-        cross_title: "Croix de reglage optique (grille 1 cm)",
+        cross_title: "Croix de réglage (grille 1 cm)",
         scale_verif: "VERIFICATION D'ECHELLE :",
         segment_len: "Ce segment doit mesurer exactement 5 cm",
         print_warn: "ATTENTION : IMPRIMEZ A TAILLE REELLE (100%)",
@@ -184,10 +184,17 @@ function drawCheckersAt(doc, ox, oy, distance) {
 // Optical sighting cross : fills the whole page (1 per sheet).
 function drawCrossFull(doc, width, height) {
     const cx = width / 2, cy = height / 2;
+    
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(12);
+    doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
-    doc.text(t('cross_title'), cx, 30, { align: "center" });
+    doc.text(t('cross_title'), 10, height - 10);
+
+    // Add tireur.org watermark in italic at the bottom right
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text("tireur.org", width - 10, height - 10, { align: "right" });
 
     // Centered 1 cm grid (light gray), drawn first
     doc.setDrawColor(200, 200, 200);
