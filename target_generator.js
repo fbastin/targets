@@ -241,16 +241,22 @@ function drawPageHeader(doc, width) {
 }
 
 // Available layouts : number of targets -> [columns, rows].
-const LAYOUTS = { 1: [1, 1], 2: [1, 2], 4: [2, 2], 6: [2, 3], 9: [3, 3] };
+const LAYOUTS = { 1: [1, 1], 2: [1, 2], 4: [2, 2], 6: [2, 3], 9: [3, 3], 12: [3, 4] };
 
 function generateTarget() {
     const { jsPDF } = window.jspdf;
 
     const targetType = document.getElementById('targetType').value;
     const paperFormat = document.getElementById('paperFormat').value;
+    const paperOrientation = document.getElementById('paperOrientation').value === 'landscape' ? 'landscape' : 'portrait';
     const perPage = parseInt(document.getElementById('layout').value, 10) || 1;
 
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: paperFormat });
+    const doc = new jsPDF({
+        orientation: paperOrientation,
+        unit: 'mm',
+        format: paperFormat,
+        putOnlyUsedFonts: true
+    });
     const width = doc.internal.pageSize.getWidth();
     const height = doc.internal.pageSize.getHeight();
 
@@ -287,9 +293,28 @@ function generateTarget() {
         drawOne = (ox, oy) => drawCheckersAt(doc, ox, oy, distance);
     }
 
-    const [cols, rows] = LAYOUTS[perPage] || [1, 1];
-    const cellW = width / cols, cellH = height / rows;
-    const needed = extent + 12; // title margin + border
+    let [cols, rows] = LAYOUTS[perPage] || [1, 1];
+    
+    // In landscape mode, we should swap rows and columns to maintain a better aspect ratio
+    // for multiple targets per page (e.g. 2 targets should be 2 cols x 1 row, not 1 col x 2 rows).
+    if (paperOrientation === 'landscape' && perPage > 1 && cols !== rows) {
+        const temp = cols;
+        cols = rows;
+        rows = temp;
+    }
+
+    // Define a "safe zone" to avoid overlapping with header (y < 25) and footer (y > height - 15)
+    const minX = 10;
+    const maxX = width - 10;
+    const minY = 30; // Clear header rule
+    const maxY = height - 20; // Clear footer text
+
+    const safeW = maxX - minX;
+    const safeH = maxY - minY;
+
+    const cellW = safeW / cols;
+    const cellH = safeH / rows;
+    const needed = extent + 2; // target diameter + 2mm safe gap
 
     if (needed > Math.min(cellW, cellH)) {
         alert(t("too_large").replace('{n}', perPage));
@@ -298,7 +323,7 @@ function generateTarget() {
 
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-            drawOne(cellW * (c + 0.5), cellH * (r + 0.5));
+            drawOne(minX + cellW * (c + 0.5), minY + cellH * (r + 0.5));
         }
     }
 
