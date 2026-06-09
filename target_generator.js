@@ -8,6 +8,11 @@ const I18N = {
         issf_50m: "50 m Carabine",
         issf_10m: "10 m Pistolet",
         issf_10m_rifle: "10 m Carabine",
+        issf_25m_precision: "25 m Pistolet (précision)",
+        issf_25m_rapid: "25 m Pistolet (tir rapide)",
+        issf_50m_pistol: "50 m Pistolet",
+        crop_note: "centre uniquement (échelle 100 %)",
+        tile_hint: "Découpez sur les repères et assemblez",
         actual_size: "Taille réelle — 50 m",
         custom_dist: "Personnalisée…",
         checkers_title: "Damier - 1 MOA à",
@@ -26,6 +31,11 @@ const I18N = {
         issf_50m: "50m Rifle",
         issf_10m: "10m Air Pistol",
         issf_10m_rifle: "10m Air Rifle",
+        issf_25m_precision: "25m Pistol (precision)",
+        issf_25m_rapid: "25m Pistol (rapid fire)",
+        issf_50m_pistol: "50m Pistol",
+        crop_note: "center only (100% scale)",
+        tile_hint: "Cut on the marks and assemble",
         actual_size: "Actual Size — 50 m",
         custom_dist: "Custom…",
         checkers_title: "Checkers - 1 MOA at",
@@ -86,7 +96,56 @@ const ISSF = {
         numFont: 5,    // very small target (Ø 45.5 mm) : smaller font
         dist: 10,
         reducible: false
+    },
+    // ISSF 25 m Precision Pistol target (also Sport/Standard slow fire) : zones 1..10,
+    // 50 mm steps, black zone = zones 7-10 (Ø 200 mm), inner ten Ø 25 mm. Outer Ø 500 mm.
+    issf_25m_precision: {
+        titleKey: "issf_25m_precision",
+        diams: [500, 450, 400, 350, 300, 250, 200, 150, 100, 50],
+        black: 200,
+        innerTen: 25,
+        numFont: 11,
+        dist: 25,
+        reducible: false,
+        oversize: true
+    },
+    // ISSF 25 m Rapid Fire Pistol target : zones 5..10 only, 80 mm steps, fully black
+    // (black zone = whole Ø 500 mm), inner ten Ø 50 mm. Numbers 5..9 are white on black.
+    issf_25m_rapid: {
+        titleKey: "issf_25m_rapid",
+        diams: [500, 420, 340, 260, 180, 100],
+        black: 500,
+        innerTen: 50,
+        numFont: 13,
+        firstRingValue: 5,
+        labelCount: 5,
+        dist: 25,
+        reducible: false,
+        oversize: true
+    },
+    // ISSF 50 m Pistol target (Free Pistol) : identical face to the 25 m Precision target —
+    // zones 1..10, 50 mm steps, black zone = zones 7-10 (Ø 200 mm), inner ten Ø 25 mm, outer Ø 500 mm.
+    issf_50m_pistol: {
+        titleKey: "issf_50m_pistol",
+        diams: [500, 450, 400, 350, 300, 250, 200, 150, 100, 50],
+        black: 200,
+        innerTen: 25,
+        numFont: 11,
+        dist: 50,
+        reducible: false,
+        oversize: true
     }
+};
+
+// Paper sizes as [short side, long side] in mm. Orientation is applied by jsPDF.
+const PAPER = {
+    a4:      [210, 297],
+    a3:      [297, 420],
+    a2:      [420, 594],
+    a1:      [594, 841],
+    letter:  [215.9, 279.4],
+    tabloid: [279.4, 431.8], // ANSI B / Ledger, 11 x 17 in
+    ansid:   [558.8, 863.6]  // ANSI D, 22 x 34 in
 };
 
 // Reduced shooting distances for ISSF 50m (1 yard = 0.9144 m).
@@ -111,12 +170,15 @@ function getMoaDistances() {
     ];
 }
 
-// Zone numbers (1 to 8) placed on the 4 axes, in the band of each zone.
-function drawRingNumbers(doc, cx, cy, diams, blackDiam, fontSize) {
+// Zone numbers placed on the 4 axes, in the band of each zone.
+// firstValue = score of the outermost band (default 1) ; count = how many bands to label.
+function drawRingNumbers(doc, cx, cy, diams, blackDiam, fontSize, firstValue, count) {
+    const start = firstValue || 1;
+    const n = (count != null) ? count : 8;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(fontSize || 9);
-    for (let k = 0; k < 8; k++) {
-        const value = k + 1;
+    for (let k = 0; k < n; k++) {
+        const value = start + k;
         const rMid = (diams[k] / 2 + diams[k + 1] / 2) / 2; // middle of the ring
         const onBlack = (2 * rMid) <= blackDiam;
         doc.setTextColor(onBlack ? 255 : 0, onBlack ? 255 : 0, onBlack ? 255 : 0);
@@ -162,7 +224,7 @@ function drawISSFAt(doc, ox, oy, spec, scale) {
         doc.circle(ox, oy, innerTen / 2, 'S');
     }
 
-    drawRingNumbers(doc, ox, oy, diams, black, numFont);
+    drawRingNumbers(doc, ox, oy, diams, black, numFont, spec.firstRingValue, spec.labelCount);
 }
 
 // Draws a checkers target (1 MOA) centered at (ox, oy) for a given distance (m).
@@ -240,6 +302,96 @@ function drawPageHeader(doc, width) {
     doc.text(t("no_fit"), width - 10, 14, { align: "right" });
 }
 
+// 5 cm calibration ruler drawn inside an opaque white box (legible over a black target).
+function drawScaleRulerBox(doc, x, y) {
+    doc.setFillColor(255, 255, 255);
+    doc.rect(x - 2, y - 6, 66, 16, 'F');
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.text(t("segment_len"), x, y - 1);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.line(x, y + 5, x + 50, y + 5); // main line
+    for (let i = 0; i <= 5; i++) {
+        const xx = x + i * 10;
+        doc.line(xx, y + 3, xx, y + 7); // tick every cm
+    }
+}
+
+// Corner trim marks + sheet index for a tiled (multi-sheet) page.
+function drawTileMarks(doc, width, height, margin, r, c, rows, cols) {
+    const x0 = margin, y0 = margin, x1 = width - margin, y1 = height - margin;
+    const L = 7;
+    doc.setDrawColor(120, 120, 120);
+    doc.setLineWidth(0.3);
+    doc.line(x0, y0, x0 + L, y0); doc.line(x0, y0, x0, y0 + L);       // top-left
+    doc.line(x1 - L, y0, x1, y0); doc.line(x1, y0, x1, y0 + L);       // top-right
+    doc.line(x0, y1 - L, x0, y1); doc.line(x0, y1, x0 + L, y1);       // bottom-left
+    doc.line(x1 - L, y1, x1, y1); doc.line(x1, y1 - L, x1, y1);       // bottom-right
+
+    const label = `L${r + 1}/${rows} · C${c + 1}/${cols}`;
+    doc.setFillColor(255, 255, 255);
+    doc.rect(x0, y0, 30, 7, 'F');
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text(label, x0 + 2, y0 + 5);
+}
+
+// Draws an oversize ISSF target that does not fit on the chosen sheet, either as a
+// multi-sheet mosaic at true scale ('tile') or keeping only the central portion ('crop').
+// drawOne(ox, oy) renders the full target; anything outside the page is clipped by the viewer.
+function drawISSFOversize(doc, drawOne, extent, page, mode, pageTitle, fileType) {
+    const { width, height, fmt, orientation } = page;
+
+    if (mode === 'crop') {
+        drawOne(width / 2, height / 2);
+        const note = (pageTitle ? pageTitle + " — " : "") + t("crop_note");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setFillColor(255, 255, 255);
+        doc.rect(8, height - 16, Math.min(width - 16, doc.getTextWidth(note) + 6), 8, 'F');
+        doc.setTextColor(0, 0, 0);
+        doc.text(note, 10, height - 10);
+        drawScaleRulerBox(doc, 10, 22);
+        doc.save(`Target_${fileType}_crop.pdf`);
+        return;
+    }
+
+    // Tiling : abutting pages with an 8 mm trim margin, target centered over the whole mosaic.
+    const margin = 8;
+    const usableW = width - 2 * margin;
+    const usableH = height - 2 * margin;
+    const cols = Math.ceil(extent / usableW);
+    const rows = Math.ceil(extent / usableH);
+    const totalW = cols * usableW;
+    const totalH = rows * usableH;
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (!(r === 0 && c === 0)) doc.addPage(fmt.slice(), orientation);
+            const ox = margin + totalW / 2 - c * usableW;
+            const oy = margin + totalH / 2 - r * usableH;
+            drawOne(ox, oy);
+            drawTileMarks(doc, width, height, margin, r, c, rows, cols);
+            if (r === 0 && c === 0) {
+                drawScaleRulerBox(doc, 10, 22);
+                if (pageTitle) {
+                    const hint = pageTitle + " — " + t("tile_hint");
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(9);
+                    doc.setFillColor(255, 255, 255);
+                    doc.rect(8, height - 16, Math.min(width - 16, doc.getTextWidth(hint) + 6), 8, 'F');
+                    doc.setTextColor(0, 0, 0);
+                    doc.text(hint, 10, height - 10);
+                }
+            }
+        }
+    }
+    doc.save(`Target_${fileType}_tiles.pdf`);
+}
+
 // Available layouts : number of targets -> [columns, rows].
 const LAYOUTS = { 1: [1, 1], 2: [1, 2], 4: [2, 2], 6: [2, 3], 9: [3, 3], 12: [3, 4] };
 
@@ -250,20 +402,22 @@ function generateTarget() {
     const paperFormat = document.getElementById('paperFormat').value;
     const paperOrientation = document.getElementById('paperOrientation').value === 'landscape' ? 'landscape' : 'portrait';
     const perPage = parseInt(document.getElementById('layout').value, 10) || 1;
+    const oversizeMode = (document.getElementById('oversizeMode') || {}).value || 'tile';
 
+    const fmt = (PAPER[paperFormat] || PAPER.a4).slice();
     const doc = new jsPDF({
         orientation: paperOrientation,
         unit: 'mm',
-        format: paperFormat,
+        format: fmt.slice(),
         putOnlyUsedFonts: true
     });
     const width = doc.internal.pageSize.getWidth();
     const height = doc.internal.pageSize.getHeight();
-
-    drawPageHeader(doc, width);
+    const page = { width, height, fmt, orientation: paperOrientation };
 
     // Cross always fills the page : 1 per sheet.
     if (targetType === 'cross') {
+        drawPageHeader(doc, width);
         drawCrossFull(doc, width, height);
         doc.save(`Target_${targetType}.pdf`);
         return;
@@ -317,9 +471,17 @@ function generateTarget() {
     const needed = extent + 2; // target diameter + 2mm safe gap
 
     if (needed > Math.min(cellW, cellH)) {
+        // Target too big for the sheet. Oversize ISSF targets (e.g. 25 m, Ø 500 mm) can still
+        // be produced at true scale across several sheets, or cropped to their center.
+        if (perPage === 1 && ISSF[targetType] && ISSF[targetType].oversize) {
+            drawISSFOversize(doc, drawOne, extent, page, oversizeMode, pageTitle, targetType);
+            return;
+        }
         alert(t("too_large").replace('{n}', perPage));
         return;
     }
+
+    drawPageHeader(doc, width);
 
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -384,10 +546,16 @@ function updateDistanceVisibility() {
     const label = document.getElementById('distanceLabel');
     const note = document.getElementById('distanceNote');
     const layoutGroup = document.getElementById('layoutGroup');
+    const oversizeGroup = document.getElementById('oversizeGroup');
 
     // The cross always fills the page : no multiple layout.
     if (layoutGroup) {
         layoutGroup.style.display = (type === 'cross') ? 'none' : 'block';
+    }
+
+    // Oversize options only matter for big targets that may exceed the sheet (e.g. 25 m).
+    if (oversizeGroup) {
+        oversizeGroup.style.display = (ISSF[type] && ISSF[type].oversize) ? 'block' : 'none';
     }
 
     let opts = null, labelText = '', noteText = '';
@@ -428,6 +596,8 @@ if (typeof module !== 'undefined' && module.exports) {
         I18N,
         setTargetLanguage,
         ISSF,
+        PAPER,
+        drawISSFOversize,
         getReduced50m,
         getMoaDistances,
         drawRingNumbers,
