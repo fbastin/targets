@@ -23,6 +23,8 @@ const I18N = {
         actual_size: "Taille réelle — 50 m",
         custom_dist: "Personnalisée…",
         checkers_title: "Damier - 1 MOA à",
+        standard_title: "Cible standard (anneaux concentriques)",
+        grouping_title: "Cible de groupement",
         cross_title: "Croix de réglage (grille 1 cm)",
         scale_verif: "VÉRIFICATION D'ÉCHELLE :",
         segment_len: "Ce segment doit mesurer exactement 5 cm",
@@ -53,6 +55,8 @@ const I18N = {
         actual_size: "Actual Size — 50 m",
         custom_dist: "Custom…",
         checkers_title: "Checkers - 1 MOA at",
+        standard_title: "Standard target (concentric rings)",
+        grouping_title: "Grouping target",
         cross_title: "Optical sighting cross (1 cm grid)",
         scale_verif: "SCALE VERIFICATION:",
         segment_len: "This segment must measure exactly 5 cm",
@@ -271,6 +275,47 @@ function drawCheckersAt(doc, ox, oy, distance) {
     doc.rect(ox, oy - size, size, size, 'S');         // top right
     doc.rect(ox - size, oy, size, size, 'S');         // bottom left
     doc.rect(ox, oy, size, size, 'F');                // bottom right
+
+    doc.setFillColor(255, 0, 0);
+    doc.circle(ox, oy, 1.5, 'F');
+}
+
+// Generic recreational scoring target : Ø 180 mm, nine concentric rings (20 mm steps), black
+// bull over the inner zones (numbers turn white there), and a red central aiming dot. Not an
+// official face — fits A4 and works with the multi-target layout. Centered at (ox, oy).
+function drawStandardAt(doc, ox, oy) {
+    const diams = [180, 160, 140, 120, 100, 80, 60, 40, 20];
+    const black = 80; // inner zones drawn black for contrast
+
+    doc.setFillColor(0, 0, 0);
+    doc.circle(ox, oy, black / 2, 'F');
+
+    doc.setLineWidth(0.2);
+    for (let i = 0; i < diams.length; i++) {
+        if (diams[i] <= black) doc.setDrawColor(255, 255, 255);
+        else doc.setDrawColor(0, 0, 0);
+        doc.circle(ox, oy, diams[i] / 2, 'S');
+    }
+
+    drawRingNumbers(doc, ox, oy, diams, black, 9);
+
+    doc.setFillColor(255, 0, 0);
+    doc.circle(ox, oy, 1.2, 'F');
+}
+
+// Grouping practice mark : two thin red aiming circles with a black crosshair and a small red
+// center, ~70 mm overall. Use several per page (4/6/9) to shoot distinct groups on one sheet.
+function drawGroupingAt(doc, ox, oy) {
+    const r = 30;
+    doc.setDrawColor(200, 0, 0);
+    doc.setLineWidth(0.6);
+    doc.circle(ox, oy, r, 'S');
+    doc.circle(ox, oy, r * 0.6, 'S');
+
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.3);
+    doc.line(ox - r - 5, oy, ox + r + 5, oy);
+    doc.line(ox, oy - r - 5, ox, oy + r + 5);
 
     doc.setFillColor(255, 0, 0);
     doc.circle(ox, oy, 1.5, 'F');
@@ -616,6 +661,14 @@ function generateTarget() {
         pageTitle = `${t('ft_title')} ${fmtMeters(kz)} mm`;
         extentW = extentH = kz + 30; // faceplate diameter
         drawOne = (ox, oy) => drawFieldTargetAt(doc, ox, oy, kz);
+    } else if (targetType === 'standard_rings') {
+        pageTitle = t('standard_title');
+        extentW = extentH = 180;
+        drawOne = (ox, oy) => drawStandardAt(doc, ox, oy);
+    } else if (targetType === 'grouping') {
+        pageTitle = t('grouping_title');
+        extentW = extentH = 70;
+        drawOne = (ox, oy) => drawGroupingAt(doc, ox, oy);
     } else { // checkers
         const distance = getSelectedDistanceMeters() || 100;
         const size = distance * 0.2908882;
@@ -833,6 +886,8 @@ if (typeof module !== 'undefined' && module.exports) {
         issfOuterDiameter,
         drawISSFAt,
         drawCheckersAt,
+        drawStandardAt,
+        drawGroupingAt,
         drawFieldTargetAt,
         drawBiathlonAt,
         BIATHLON,
