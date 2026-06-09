@@ -11,6 +11,13 @@ const I18N = {
         issf_25m_precision: "25 m Pistolet (précision)",
         issf_25m_rapid: "25 m Pistolet (tir rapide)",
         issf_50m_pistol: "50 m Pistolet",
+        issf_300m: "300 m Carabine",
+        biathlon_prone: "Biathlon 50 m — couché (mouche Ø 45 mm)",
+        biathlon_standing: "Biathlon 50 m — debout (mouche Ø 115 mm)",
+        ipsc: "IPSC Classic (reconstruction)",
+        idpa: "IDPA (reconstruction)",
+        ft_title: "Field Target — kill zone Ø",
+        ft_note: "La kill zone est imprimée à sa taille réelle (échelle 100 %). La difficulté dépend de la distance de tir.",
         crop_note: "centre uniquement (échelle 100 %)",
         tile_hint: "Découpez sur les repères et assemblez",
         actual_size: "Taille réelle — 50 m",
@@ -34,6 +41,13 @@ const I18N = {
         issf_25m_precision: "25m Pistol (precision)",
         issf_25m_rapid: "25m Pistol (rapid fire)",
         issf_50m_pistol: "50m Pistol",
+        issf_300m: "300m Rifle",
+        biathlon_prone: "Biathlon 50m — prone (Ø 45 mm)",
+        biathlon_standing: "Biathlon 50m — standing (Ø 115 mm)",
+        ipsc: "IPSC Classic (reconstruction)",
+        idpa: "IDPA (reconstruction)",
+        ft_title: "Field Target — kill zone Ø",
+        ft_note: "The kill zone is printed at true size (100% scale). Difficulty comes from the shooting distance.",
         crop_note: "center only (100% scale)",
         tile_hint: "Cut on the marks and assemble",
         actual_size: "Actual Size — 50 m",
@@ -123,6 +137,18 @@ const ISSF = {
         reducible: false,
         oversize: true
     },
+    // ISSF 300 m Rifle target : zones 1..10, 100 mm steps, black zone = zones 5-10 (Ø 600 mm),
+    // inner ten Ø 50 mm. Outer Ø 1000 mm. Same face geometry as the 50 m target, scaled x2.
+    issf_300m: {
+        titleKey: "issf_300m",
+        diams: [1000, 900, 800, 700, 600, 500, 400, 300, 200, 100],
+        black: 600,
+        innerTen: 50,
+        numFont: 18,
+        dist: 300,
+        reducible: false,
+        oversize: true
+    },
     // ISSF 50 m Pistol target (Free Pistol) : identical face to the 25 m Precision target —
     // zones 1..10, 50 mm steps, black zone = zones 7-10 (Ø 200 mm), inner ten Ø 25 mm, outer Ø 500 mm.
     issf_50m_pistol: {
@@ -146,6 +172,13 @@ const PAPER = {
     letter:  [215.9, 279.4],
     tabloid: [279.4, 431.8], // ANSI B / Ledger, 11 x 17 in
     ansid:   [558.8, 863.6]  // ANSI D, 22 x 34 in
+};
+
+// IBU biathlon targets (50 m) : black aiming disc Ø 115 mm ; knockdown hit zone Ø 45 mm
+// (prone) or 115 mm (standing). aim = visible black mark, hit = scoring/knockdown circle.
+const BIATHLON = {
+    biathlon_prone:    { hit: 45,  aim: 115 },
+    biathlon_standing: { hit: 115, aim: 115 }
 };
 
 // Reduced shooting distances for ISSF 50m (1 yard = 0.9144 m).
@@ -243,6 +276,133 @@ function drawCheckersAt(doc, ox, oy, distance) {
     doc.circle(ox, oy, 1.5, 'F');
 }
 
+// Field Target practice face : light faceplate disc with a central black kill zone drawn at
+// true size, plus a red aiming dot. killZone = kill-zone diameter in mm.
+function drawFieldTargetAt(doc, ox, oy, killZone) {
+    const faceR = (killZone + 30) / 2; // 15 mm painted ring around the kill zone
+
+    // Faceplate : light gray disc with a thin outline
+    doc.setFillColor(240, 240, 240);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.4);
+    doc.circle(ox, oy, faceR, 'FD');
+
+    // Kill zone : solid black circle at true size
+    doc.setFillColor(0, 0, 0);
+    doc.circle(ox, oy, killZone / 2, 'F');
+
+    // Central aiming dot
+    doc.setFillColor(255, 0, 0);
+    doc.circle(ox, oy, 0.8, 'F');
+}
+
+// IBU biathlon practice face : black aiming disc with the knockdown hit zone marked by a
+// white ring (prone) and a central aiming dot. cfg = { hit, aim } diameters in mm.
+function drawBiathlonAt(doc, ox, oy, cfg) {
+    // Black aiming disc (Ø 115 mm)
+    doc.setFillColor(0, 0, 0);
+    doc.circle(ox, oy, cfg.aim / 2, 'F');
+
+    // Hit zone marked by a white ring when smaller than the aiming mark (prone)
+    if (cfg.hit < cfg.aim) {
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.4);
+        doc.circle(ox, oy, cfg.hit / 2, 'S');
+    }
+
+    // Central white aiming dot
+    doc.setFillColor(255, 255, 255);
+    doc.circle(ox, oy, 0.8, 'F');
+}
+
+// Draws a closed polygon from absolute mm points, scaled by s around center (cx, cy).
+// pts = array of [x, y] in mm relative to the silhouette center. style = 'S' | 'F' | 'FD'.
+function drawPolyAt(doc, cx, cy, s, pts, style) {
+    const P = pts.map(p => [cx + p[0] * s, cy + p[1] * s]);
+    const rel = P.slice(1).map((p, i) => [p[0] - P[i][0], p[1] - P[i][1]]);
+    doc.lines(rel, P[0][0], P[0][1], [1, 1], style, true);
+}
+
+// Practical-shooting silhouette targets, reconstructed from published overall dimensions and
+// scoring-zone sizes (outline is a faithful reconstruction, not the exact official vector).
+// Each entry : w/h = full-scale bounding box (mm) ; draw(doc, cx, cy, s) renders at scale s.
+const SILHOUETTE = {
+    // IPSC Classic ("Metric") cardboard target : ~450 x 590 mm. Zones A (center + head), C, D.
+    ipsc: {
+        titleKey: "ipsc",
+        w: 450, h: 590,
+        draw: function (doc, cx, cy, s) {
+            // Outline (D boundary), symmetric, y down, center at origin.
+            const outline = [
+                [-75, -295], [75, -295], [75, -145], [225, -75], [225, 175],
+                [150, 295], [-150, 295], [-225, 175], [-225, -75], [-75, -145]
+            ];
+            doc.setLineWidth(0.5);
+            doc.setDrawColor(0, 0, 0);
+            drawPolyAt(doc, cx, cy, s, outline, 'S');
+
+            // C/D boundary : an inner silhouette enclosing the C zone (upper torso + head).
+            const cZone = [
+                [-55, -270], [55, -270], [55, -160], [170, -55], [170, 150],
+                [-170, 150], [-170, -55], [-55, -160]
+            ];
+            doc.setLineWidth(0.4);
+            drawPolyAt(doc, cx, cy, s, cZone, 'S');
+
+            // A zone : body rectangle + head rectangle.
+            doc.rect(cx - 75 * s, cy - 60 * s, 150 * s, 210 * s, 'S'); // body A
+            doc.rect(cx - 45 * s, cy - 255 * s, 90 * s, 95 * s, 'S');  // head A
+
+            // Zone labels.
+            doc.setTextColor(0, 0, 0);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(Math.max(5, 14 * s));
+            const opt = { align: "center", baseline: "middle" };
+            doc.text("A", cx, cy + 45 * s, opt);
+            doc.text("C", cx - 130 * s, cy + 60 * s, opt);
+            doc.text("D", cx - 190 * s, cy + 60 * s, opt);
+        }
+    },
+    // IDPA cardboard target : ~457 x 762 mm (18 x 30 in). -0 body 8" circle, -0 head 4" circle,
+    // -1 zone around the chest, -3 the remainder. Head is a 6" zone.
+    idpa: {
+        titleKey: "idpa",
+        w: 457, h: 762,
+        draw: function (doc, cx, cy, s) {
+            // Outline : head (6") + rounded shoulders + body, y down, center at origin.
+            const outline = [
+                [-60, -381], [-76, -365], [-76, -229], [-228, -150], [-228, 381],
+                [228, 381], [228, -150], [76, -229], [76, -365], [60, -381]
+            ];
+            doc.setLineWidth(0.5);
+            doc.setDrawColor(0, 0, 0);
+            drawPolyAt(doc, cx, cy, s, outline, 'S');
+
+            // -1 body boundary : rounded rectangle around the chest -0 circle.
+            const m = 25.4;
+            const one = [
+                [-130, -210], [130, -210], [130, 40], [-130, 40]
+            ];
+            doc.setLineWidth(0.4);
+            drawPolyAt(doc, cx, cy, s, one, 'S');
+
+            // -0 body circle (8 in) and -0 head circle (4 in).
+            doc.setLineWidth(0.4);
+            doc.circle(cx, cy - 80 * s, (8 * m / 2) * s, 'S');   // chest -0
+            doc.circle(cx, cy - 305 * s, (4 * m / 2) * s, 'S');  // head -0
+
+            doc.setTextColor(0, 0, 0);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(Math.max(5, 13 * s));
+            const opt = { align: "center", baseline: "middle" };
+            doc.text("-0", cx, cy - 80 * s, opt);
+            doc.text("-0", cx, cy - 305 * s, opt);
+            doc.text("-1", cx, cy - 175 * s, opt);
+            doc.text("-3", cx, cy + 250 * s, opt);
+        }
+    }
+};
+
 // Optical sighting cross : fills the whole page (1 per sheet).
 function drawCrossFull(doc, width, height) {
     const cx = width / 2, cy = height / 2;
@@ -339,10 +499,11 @@ function drawTileMarks(doc, width, height, margin, r, c, rows, cols) {
     doc.text(label, x0 + 2, y0 + 5);
 }
 
-// Draws an oversize ISSF target that does not fit on the chosen sheet, either as a
-// multi-sheet mosaic at true scale ('tile') or keeping only the central portion ('crop').
-// drawOne(ox, oy) renders the full target; anything outside the page is clipped by the viewer.
-function drawISSFOversize(doc, drawOne, extent, page, mode, pageTitle, fileType) {
+// Draws an oversize target that does not fit on the chosen sheet, either as a multi-sheet
+// mosaic at true scale ('tile') or keeping only the central portion ('crop'). extentW/extentH
+// are the target's bounding box (mm). drawOne(ox, oy) renders the full target; anything outside
+// the page is clipped by the viewer.
+function drawISSFOversize(doc, drawOne, extentW, extentH, page, mode, pageTitle, fileType) {
     const { width, height, fmt, orientation } = page;
 
     if (mode === 'crop') {
@@ -363,8 +524,8 @@ function drawISSFOversize(doc, drawOne, extent, page, mode, pageTitle, fileType)
     const margin = 8;
     const usableW = width - 2 * margin;
     const usableH = height - 2 * margin;
-    const cols = Math.ceil(extent / usableW);
-    const rows = Math.ceil(extent / usableH);
+    const cols = Math.ceil(extentW / usableW);
+    const rows = Math.ceil(extentH / usableH);
     const totalW = cols * usableW;
     const totalH = rows * usableH;
 
@@ -423,8 +584,8 @@ function generateTarget() {
         return;
     }
 
-    // Prepares the target drawing function and its bounding size (outer diameter).
-    let extent, drawOne, pageTitle = "";
+    // Prepares the target drawing function and its bounding box (extentW x extentH, mm).
+    let extentW, extentH, drawOne, pageTitle = "";
     if (ISSF[targetType]) {
         const spec = ISSF[targetType];
         let scale = 1;
@@ -434,16 +595,34 @@ function generateTarget() {
         }
         pageTitle = t(spec.titleKey);
         if (scale !== 1) pageTitle += ` — ${Math.round(scale * 100)}% (tir à ${fmtMeters(spec.dist * scale)} m)`;
-        
-        extent = issfOuterDiameter(spec, scale);
+
+        extentW = extentH = issfOuterDiameter(spec, scale);
         drawOne = (ox, oy) => drawISSFAt(doc, ox, oy, spec, scale);
+    } else if (BIATHLON[targetType]) {
+        const cfg = BIATHLON[targetType];
+        pageTitle = t(targetType);
+        extentW = extentH = cfg.aim;
+        drawOne = (ox, oy) => drawBiathlonAt(doc, ox, oy, cfg);
+    } else if (SILHOUETTE[targetType]) {
+        const sil = SILHOUETTE[targetType];
+        const sc = getSelectedScale();
+        pageTitle = t(sil.titleKey);
+        if (sc !== 1) pageTitle += ` — 1:${Math.round(1 / sc)}`;
+        extentW = sil.w * sc;
+        extentH = sil.h * sc;
+        drawOne = (ox, oy) => sil.draw(doc, ox, oy, sc);
+    } else if (targetType === 'field_target') {
+        const kz = getSelectedKillZone();
+        pageTitle = `${t('ft_title')} ${fmtMeters(kz)} mm`;
+        extentW = extentH = kz + 30; // faceplate diameter
+        drawOne = (ox, oy) => drawFieldTargetAt(doc, ox, oy, kz);
     } else { // checkers
         const distance = getSelectedDistanceMeters() || 100;
         const size = distance * 0.2908882;
         const sizeLabel = currentLang === 'fr' ? size.toFixed(1).replace('.', ',') : size.toFixed(1);
         pageTitle = `${t('checkers_title')} ${fmtMeters(distance)} m (${sizeLabel} mm)`;
-        
-        extent = 2 * distance * 0.2908882;
+
+        extentW = extentH = 2 * distance * 0.2908882;
         drawOne = (ox, oy) => drawCheckersAt(doc, ox, oy, distance);
     }
 
@@ -468,13 +647,13 @@ function generateTarget() {
 
     const cellW = safeW / cols;
     const cellH = safeH / rows;
-    const needed = extent + 2; // target diameter + 2mm safe gap
 
-    if (needed > Math.min(cellW, cellH)) {
-        // Target too big for the sheet. Oversize ISSF targets (e.g. 25 m, Ø 500 mm) can still
-        // be produced at true scale across several sheets, or cropped to their center.
-        if (perPage === 1 && ISSF[targetType] && ISSF[targetType].oversize) {
-            drawISSFOversize(doc, drawOne, extent, page, oversizeMode, pageTitle, targetType);
+    if (extentW + 2 > cellW || extentH + 2 > cellH) {
+        // Target too big for the sheet. Oversize-capable targets (e.g. 25/50/300 m, IPSC/IDPA at
+        // full scale) can still be produced at true scale across several sheets, or center-cropped.
+        const oversizable = (ISSF[targetType] && ISSF[targetType].oversize) || SILHOUETTE[targetType];
+        if (perPage === 1 && oversizable) {
+            drawISSFOversize(doc, drawOne, extentW, extentH, page, oversizeMode, pageTitle, targetType);
             return;
         }
         alert(t("too_large").replace('{n}', perPage));
@@ -527,6 +706,41 @@ function getSelectedDistanceMeters() {
     return parseFloat(sel.value) || 0;
 }
 
+// Selected Field Target kill-zone diameter, in mm (handles the custom option).
+function getSelectedKillZone() {
+    const sel = document.getElementById('killZone');
+    if (!sel) return 40;
+    if (sel.value === 'custom') {
+        return parseFloat(document.getElementById('killZoneCustom').value) || 40;
+    }
+    return parseFloat(sel.value) || 40;
+}
+
+// Selected print scale for silhouette targets (1 = full size ; handles the custom % option).
+function getSelectedScale() {
+    const sel = document.getElementById('silhouetteScale');
+    if (!sel) return 1;
+    if (sel.value === 'custom') {
+        const v = parseFloat(document.getElementById('silhouetteScaleCustom').value) || 100;
+        return Math.max(0.05, v / 100);
+    }
+    return parseFloat(sel.value) || 1;
+}
+
+// Displays the custom scale field when the corresponding option is chosen.
+function updateSilhouetteScaleCustom() {
+    const sel = document.getElementById('silhouetteScale');
+    const inp = document.getElementById('silhouetteScaleCustom');
+    if (sel && inp) inp.style.display = (sel.value === 'custom') ? 'block' : 'none';
+}
+
+// Displays the custom kill-zone field when the corresponding option is chosen.
+function updateKillZoneCustom() {
+    const sel = document.getElementById('killZone');
+    const inp = document.getElementById('killZoneCustom');
+    if (sel && inp) inp.style.display = (sel.value === 'custom') ? 'block' : 'none';
+}
+
 // Displays the custom distance field when the corresponding option is chosen.
 function updateCustomVisibility() {
     const sel = document.getElementById('distance');
@@ -553,9 +767,24 @@ function updateDistanceVisibility() {
         layoutGroup.style.display = (type === 'cross') ? 'none' : 'block';
     }
 
-    // Oversize options only matter for big targets that may exceed the sheet (e.g. 25 m).
+    // Oversize options matter for big targets that may exceed the sheet (25/50/300 m, silhouettes).
     if (oversizeGroup) {
-        oversizeGroup.style.display = (ISSF[type] && ISSF[type].oversize) ? 'block' : 'none';
+        const oversizable = (ISSF[type] && ISSF[type].oversize) || SILHOUETTE[type];
+        oversizeGroup.style.display = oversizable ? 'block' : 'none';
+    }
+
+    // Scale selector only for silhouette targets (IPSC/IDPA).
+    const scaleGroup = document.getElementById('silhouetteScaleGroup');
+    if (scaleGroup) {
+        scaleGroup.style.display = SILHOUETTE[type] ? 'block' : 'none';
+        if (SILHOUETTE[type]) updateSilhouetteScaleCustom();
+    }
+
+    // Kill-zone selector only for Field Target.
+    const killZoneGroup = document.getElementById('killZoneGroup');
+    if (killZoneGroup) {
+        killZoneGroup.style.display = (type === 'field_target') ? 'block' : 'none';
+        if (type === 'field_target') updateKillZoneCustom();
     }
 
     let opts = null, labelText = '', noteText = '';
@@ -604,6 +833,13 @@ if (typeof module !== 'undefined' && module.exports) {
         issfOuterDiameter,
         drawISSFAt,
         drawCheckersAt,
+        drawFieldTargetAt,
+        drawBiathlonAt,
+        BIATHLON,
+        SILHOUETTE,
+        drawPolyAt,
+        getSelectedScale,
+        getSelectedKillZone,
         drawCrossFull,
         drawPageHeader,
         generateTarget,
