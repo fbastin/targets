@@ -167,11 +167,13 @@ const ISSF = {
     }
 };
 
-// Scoring contract per ISSF face : integer ring value 1..10, `rings` = ring
-// boundary diameters (mm, outer to center), `inner_ten` = X-ring visible in the black.
+// Scoring contract per ISSF face : decimal ring value (electronic-target style,
+// see scoreShot()), `rings` = ring boundary diameters (mm, outer to center),
+// `inner_ten` = X-ring visible in the black, `first_ring_value` = score of the
+// outermost ring (1 unless the face only carries its upper rings, e.g. rapid fire).
 Object.keys(ISSF).forEach(key => {
     const s = ISSF[key];
-    s.scoring = { type: 'integer', rings: s.diams, inner_ten: s.innerTen > 0 };
+    s.scoring = { type: 'decimal', rings: s.diams, inner_ten: s.innerTen > 0, first_ring_value: s.firstRingValue || 1 };
 });
 
 // Paper sizes as [short side, long side] in mm. Orientation is applied by jsPDF.
@@ -188,8 +190,8 @@ const PAPER = {
 // IBU biathlon targets (50 m) : black aiming disc Ø 115 mm ; knockdown hit zone Ø 45 mm
 // (prone) or 115 mm (standing). aim = visible black mark, hit = scoring/knockdown circle.
 const BIATHLON = {
-    biathlon_prone:    { hit: 45,  aim: 115, scoring: { type: 'zones', rings: null, inner_ten: false } },
-    biathlon_standing: { hit: 115, aim: 115, scoring: { type: 'zones', rings: null, inner_ten: false } }
+    biathlon_prone:    { hit: 45,  aim: 115, scoring: { type: 'zones', rings: null, inner_ten: false, zone_diameter_mm: 45 } },
+    biathlon_standing: { hit: 115, aim: 115, scoring: { type: 'zones', rings: null, inner_ten: false, zone_diameter_mm: 115 } }
 };
 
 // Reduced shooting distances for ISSF 50m (1 yard = 0.9144 m).
@@ -295,7 +297,7 @@ const STANDARD_RINGS = {
     diams: [180, 160, 140, 120, 100, 80, 60, 40, 20],
     black: 80 // inner zones drawn black for contrast
 };
-STANDARD_RINGS.scoring = { type: 'integer', rings: STANDARD_RINGS.diams, inner_ten: false };
+STANDARD_RINGS.scoring = { type: 'integer', rings: STANDARD_RINGS.diams, inner_ten: false, first_ring_value: 1 };
 
 // Draws the standard rings target centered at (ox, oy).
 function drawStandardAt(doc, ox, oy) {
@@ -340,9 +342,10 @@ function drawGroupingAt(doc, ox, oy) {
 const GROUPING_META = { titleKey: "grouping_title", scoring: { type: 'none', rings: null, inner_ten: false } };
 
 // Field Target practice face : light faceplate disc with a central black kill zone drawn at
-// true size, plus a red aiming dot. killZone = kill-zone diameter in mm.
+// true size, plus a red aiming dot. killZone = kill-zone diameter in mm (40mm here is the
+// carnet's default configuration ; the printable PDF face lets the kill zone vary).
 // Hit/miss only (no ring subdivision) : scoring is a single kill zone.
-const FIELD_TARGET_META = { titleKey: "ft_title", scoring: { type: 'zones', rings: null, zones: ['kill'], inner_ten: false } };
+const FIELD_TARGET_META = { titleKey: "ft_title", scoring: { type: 'zones', rings: null, zones: ['kill'], inner_ten: false, zone_diameter_mm: 40 } };
 
 function drawFieldTargetAt(doc, ox, oy, killZone) {
     const faceR = (killZone + 30) / 2; // 15 mm painted ring around the kill zone
@@ -888,6 +891,37 @@ function updateDistanceVisibility() {
     updateCustomVisibility();
 }
 
+// Scores a shot from its radial distance to center (mm), given a TargetSpec.scoring
+// contract. Generalizes the linear decimal model already used by the ISSF rifle
+// sighting simulator (techniques/visee/ISSF_rifle_sighting/simulator.js::computeScore,
+// hardcoded there to the 10m air rifle's 2.5mm ring spacing) to any ring-based face by
+// deriving its own ring step from `rings` : one point of score per ring-step of radius,
+// anchored so the center scores the electronic-target maximum (`first ring value` + rings
+// count - 1, plus 0.9). This is a documented approximation, not certified competition
+// scoring — real ISSF decimal scoring uses a device-calibrated per-target constant.
+// Zone faces with a single circular hit zone (`zone_diameter_mm`, e.g. biathlon, field
+// target) score hit(1)/miss(0). Polygon zone faces (IPSC/IDPA) and ungraded faces
+// (grouping, MOA/inch grids) have no automatic score : returns null.
+function scoreShot(r_mm, scoring) {
+    if (!scoring) return null;
+
+    if (scoring.type === 'decimal' || scoring.type === 'integer') {
+        const rings = scoring.rings;
+        const n = rings.length;
+        const ringStep_mm = (rings[0] - rings[n - 1]) / (n - 1) / 2;
+        const maxValue = (scoring.first_ring_value || 1) + n - 1;
+        const raw = maxValue + 1 - (r_mm / ringStep_mm);
+        const capped = Math.max(0, Math.min(maxValue + 0.9, raw));
+        return (scoring.type === 'integer') ? Math.floor(capped) : Math.round(capped * 10) / 10;
+    }
+
+    if (scoring.type === 'zones' && scoring.zone_diameter_mm) {
+        return (r_mm <= scoring.zone_diameter_mm / 2) ? 1 : 0;
+    }
+
+    return null;
+}
+
 // Flat registry of every drawable target, exposing a TargetSpec-shaped record
 // (target_id, scoring contract, default distance, scale reference) so consumers
 // such as the carnet de tir can look up a target instead of duplicating its geometry.
@@ -983,6 +1017,7 @@ if (typeof module !== 'undefined' && module.exports) {
         FIELD_TARGET_META,
         GROUPING_META,
         getTargetRegistry,
+        scoreShot,
         drawPolyAt,
         getSelectedScale,
         getSelectedKillZone,
@@ -1004,4 +1039,5 @@ if (typeof module !== 'undefined' && module.exports) {
     window.GROUPING_META = GROUPING_META;
     window.PAPER = PAPER;
     window.getTargetRegistry = getTargetRegistry;
+    window.scoreShot = scoreShot;
 }
