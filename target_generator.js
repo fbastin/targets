@@ -167,6 +167,13 @@ const ISSF = {
     }
 };
 
+// Scoring contract per ISSF face : integer ring value 1..10, `rings` = ring
+// boundary diameters (mm, outer to center), `inner_ten` = X-ring visible in the black.
+Object.keys(ISSF).forEach(key => {
+    const s = ISSF[key];
+    s.scoring = { type: 'integer', rings: s.diams, inner_ten: s.innerTen > 0 };
+});
+
 // Paper sizes as [short side, long side] in mm. Orientation is applied by jsPDF.
 const PAPER = {
     a4:      [210, 297],
@@ -181,8 +188,8 @@ const PAPER = {
 // IBU biathlon targets (50 m) : black aiming disc Ø 115 mm ; knockdown hit zone Ø 45 mm
 // (prone) or 115 mm (standing). aim = visible black mark, hit = scoring/knockdown circle.
 const BIATHLON = {
-    biathlon_prone:    { hit: 45,  aim: 115 },
-    biathlon_standing: { hit: 115, aim: 115 }
+    biathlon_prone:    { hit: 45,  aim: 115, scoring: { type: 'zones', rings: null, inner_ten: false } },
+    biathlon_standing: { hit: 115, aim: 115, scoring: { type: 'zones', rings: null, inner_ten: false } }
 };
 
 // Reduced shooting distances for ISSF 50m (1 yard = 0.9144 m).
@@ -282,10 +289,18 @@ function drawCheckersAt(doc, ox, oy, distance) {
 
 // Generic recreational scoring target : Ø 180 mm, nine concentric rings (20 mm steps), black
 // bull over the inner zones (numbers turn white there), and a red central aiming dot. Not an
-// official face — fits A4 and works with the multi-target layout. Centered at (ox, oy).
+// official face — fits A4 and works with the multi-target layout.
+const STANDARD_RINGS = {
+    titleKey: "standard_title",
+    diams: [180, 160, 140, 120, 100, 80, 60, 40, 20],
+    black: 80 // inner zones drawn black for contrast
+};
+STANDARD_RINGS.scoring = { type: 'integer', rings: STANDARD_RINGS.diams, inner_ten: false };
+
+// Draws the standard rings target centered at (ox, oy).
 function drawStandardAt(doc, ox, oy) {
-    const diams = [180, 160, 140, 120, 100, 80, 60, 40, 20];
-    const black = 80; // inner zones drawn black for contrast
+    const diams = STANDARD_RINGS.diams;
+    const black = STANDARD_RINGS.black;
 
     doc.setFillColor(0, 0, 0);
     doc.circle(ox, oy, black / 2, 'F');
@@ -321,8 +336,14 @@ function drawGroupingAt(doc, ox, oy) {
     doc.circle(ox, oy, 1.5, 'F');
 }
 
+// Grouping mark : measures dispersion only, no scoring rings.
+const GROUPING_META = { titleKey: "grouping_title", scoring: { type: 'none', rings: null, inner_ten: false } };
+
 // Field Target practice face : light faceplate disc with a central black kill zone drawn at
 // true size, plus a red aiming dot. killZone = kill-zone diameter in mm.
+// Hit/miss only (no ring subdivision) : scoring is a single kill zone.
+const FIELD_TARGET_META = { titleKey: "ft_title", scoring: { type: 'zones', rings: null, zones: ['kill'], inner_ten: false } };
+
 function drawFieldTargetAt(doc, ox, oy, killZone) {
     const faceR = (killZone + 30) / 2; // 15 mm painted ring around the kill zone
 
@@ -376,6 +397,7 @@ const SILHOUETTE = {
     ipsc: {
         titleKey: "ipsc",
         w: 450, h: 590,
+        scoring: { type: 'zones', rings: null, zones: ['A', 'C', 'D'], inner_ten: false },
         draw: function (doc, cx, cy, s) {
             // Outline (D boundary), symmetric, y down, center at origin.
             const outline = [
@@ -413,6 +435,7 @@ const SILHOUETTE = {
     idpa: {
         titleKey: "idpa",
         w: 457, h: 762,
+        scoring: { type: 'zones', rings: null, zones: ['-0', '-1', '-3'], inner_ten: false },
         draw: function (doc, cx, cy, s) {
             // Outline : head (6") + rounded shoulders + body, y down, center at origin.
             const outline = [
@@ -865,6 +888,70 @@ function updateDistanceVisibility() {
     updateCustomVisibility();
 }
 
+// Flat registry of every drawable target, exposing a TargetSpec-shaped record
+// (target_id, scoring contract, default distance, scale reference) so consumers
+// such as the carnet de tir can look up a target instead of duplicating its geometry.
+function getTargetRegistry() {
+    const registry = [];
+
+    Object.keys(ISSF).forEach(key => {
+        const s = ISSF[key];
+        registry.push({
+            target_id: key,
+            discipline_id: key,
+            titleKey: s.titleKey,
+            scoring: s.scoring,
+            distance_m_default: s.dist,
+            reducible: !!s.reducible,
+            diameter_mm: s.diams[0]
+        });
+    });
+
+    Object.keys(BIATHLON).forEach(key => {
+        const s = BIATHLON[key];
+        registry.push({
+            target_id: key,
+            discipline_id: 'biathlon',
+            titleKey: null,
+            scoring: s.scoring,
+            distance_m_default: 50,
+            reducible: false,
+            diameter_mm: s.aim
+        });
+    });
+
+    Object.keys(SILHOUETTE).forEach(key => {
+        const s = SILHOUETTE[key];
+        registry.push({
+            target_id: key,
+            discipline_id: key,
+            titleKey: s.titleKey,
+            scoring: s.scoring,
+            distance_m_default: null,
+            reducible: false,
+            diameter_mm: Math.max(s.w, s.h)
+        });
+    });
+
+    registry.push({
+        target_id: 'standard_rings', discipline_id: 'standard_rings',
+        titleKey: STANDARD_RINGS.titleKey, scoring: STANDARD_RINGS.scoring,
+        distance_m_default: null, reducible: false, diameter_mm: STANDARD_RINGS.diams[0]
+    });
+    registry.push({
+        target_id: 'field_target', discipline_id: 'field_target',
+        titleKey: FIELD_TARGET_META.titleKey, scoring: FIELD_TARGET_META.scoring,
+        distance_m_default: null, reducible: false, diameter_mm: null
+    });
+    registry.push({
+        target_id: 'grouping', discipline_id: 'grouping',
+        titleKey: GROUPING_META.titleKey, scoring: GROUPING_META.scoring,
+        distance_m_default: null, reducible: false, diameter_mm: null
+    });
+
+    return registry;
+}
+
 // Initialize when the DOM is loaded
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', () => {
@@ -892,6 +979,10 @@ if (typeof module !== 'undefined' && module.exports) {
         drawBiathlonAt,
         BIATHLON,
         SILHOUETTE,
+        STANDARD_RINGS,
+        FIELD_TARGET_META,
+        GROUPING_META,
+        getTargetRegistry,
         drawPolyAt,
         getSelectedScale,
         getSelectedKillZone,
@@ -900,4 +991,17 @@ if (typeof module !== 'undefined' && module.exports) {
         generateTarget,
         fmtMeters
     };
+} else if (typeof window !== 'undefined') {
+    // Classic <script> tags don't put top-level `const`/`let` bindings on `window`
+    // (only `var` and function declarations do) — expose the data explicitly so
+    // other scripts on the page (e.g. carnet.js) can actually read window.ISSF etc.
+    window.I18N = I18N;
+    window.ISSF = ISSF;
+    window.BIATHLON = BIATHLON;
+    window.SILHOUETTE = SILHOUETTE;
+    window.STANDARD_RINGS = STANDARD_RINGS;
+    window.FIELD_TARGET_META = FIELD_TARGET_META;
+    window.GROUPING_META = GROUPING_META;
+    window.PAPER = PAPER;
+    window.getTargetRegistry = getTargetRegistry;
 }
