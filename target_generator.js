@@ -14,7 +14,7 @@ const I18N = {
         issf_300m: "300 m Carabine",
         biathlon_prone: "Biathlon 50 m — couché (mouche Ø 45 mm)",
         biathlon_standing: "Biathlon 50 m — debout (mouche Ø 115 mm)",
-        ipsc: "IPSC Classic (reconstruction)",
+        ipsc: "IPSC (annexe B2 du règlement)",
         idpa: "IDPA (reconstruction)",
         ft_title: "Field Target — kill zone Ø",
         ft_note: "La kill zone est imprimée à sa taille réelle (échelle 100 %). La difficulté dépend de la distance de tir.",
@@ -49,7 +49,7 @@ const I18N = {
         imssu_scale_3_8: "3/8 — pistolet PC (9,52 mm)",
         imssu_scale_1_5: "1/5 — carabine PC (5,08 mm)",
         imssu_scale_1_10: "1/10 — air comprimé (2,54 mm)",
-        sil_note_generic: "Contours <strong>reconstruits</strong> à partir des cotes officielles publiées (IPSC ≈ 450 × 590 mm, IDPA ≈ 457 × 762 mm) — fidélité géométrique proche, non garantie au mm. En taille réelle, la cible dépasse l'A4 : utilisez un grand format, la mosaïque, ou une échelle réduite.",
+        sil_note_generic: "La cible <strong>IPSC</strong> (450 × 570 mm) est tracée d’après les cotes de l’annexe B2 du règlement IPSC Handgun, édition janvier 2026. Le contour <strong>IDPA</strong> (≈ 457 × 762 mm) reste une <strong>reconstruction</strong> à partir des cotes publiées — fidélité géométrique proche, non garantie au mm. En taille réelle, la cible dépasse l'A4 : utilisez un grand format, la mosaïque, ou une échelle réduite.",
         sil_note_imssu: "Contours <strong>vectorisés depuis les planches officielles IMSSU 2025</strong> (pleine grandeur). L'échelle correspond à la catégorie d'arme ; les échelles réduites (1/5, 1/10) servent à s'entraîner à courte distance. En taille réelle la silhouette dépasse l'A4 : utilisez un grand format ou la mosaïque."
     },
     en: {
@@ -62,7 +62,7 @@ const I18N = {
         issf_300m: "300m Rifle",
         biathlon_prone: "Biathlon 50m — prone (Ø 45 mm)",
         biathlon_standing: "Biathlon 50m — standing (Ø 115 mm)",
-        ipsc: "IPSC Classic (reconstruction)",
+        ipsc: "IPSC (rulebook Appendix B2)",
         idpa: "IDPA (reconstruction)",
         ft_title: "Field Target — kill zone Ø",
         ft_note: "The kill zone is printed at true size (100% scale). Difficulty comes from the shooting distance.",
@@ -97,7 +97,7 @@ const I18N = {
         imssu_scale_3_8: "3/8 — smallbore pistol (9.52 mm)",
         imssu_scale_1_5: "1/5 — smallbore rifle (5.08 mm)",
         imssu_scale_1_10: "1/10 — air (2.54 mm)",
-        sil_note_generic: "Outlines <strong>reconstructed</strong> from official published specifications (IPSC ≈ 450 × 590 mm, IDPA ≈ 457 × 762 mm) — close geometric fidelity, not guaranteed to the mm. At real size, the target exceeds A4: use a large format, tiling, or a reduced scale.",
+        sil_note_generic: "The <strong>IPSC</strong> face (450 × 570 mm) is drawn from the dimensions of Appendix B2 of the IPSC Handgun rules, January 2026 Edition. The <strong>IDPA</strong> outline (≈ 457 × 762 mm) remains a <strong>reconstruction</strong> from published specifications — close geometric fidelity, not guaranteed to the mm. At real size, the target exceeds A4: use a large format, tiling, or a reduced scale.",
         sil_note_imssu: "Outlines <strong>vectorized from the official IMSSU 2025 plates</strong> (full scale). The scale matches the firearm category ; reduced scales (1/5, 1/10) are meant for short-distance practice. At real size the silhouette exceeds A4: use a large format or tiling."
     }
 };
@@ -418,6 +418,42 @@ function drawBiathlonAt(doc, ox, oy, cfg) {
 
 // Draws a closed polygon from absolute mm points, scaled by s around center (cx, cy).
 // pts = array of [x, y] in mm relative to the silhouette center. style = 'S' | 'F' | 'FD'.
+// Inward offset of a CONVEX polygon, in a y-down frame.
+// Shrinking a polygon is not scaling it: a uniform scale moves every edge by a distance
+// proportional to its distance from the centroid, which is only right for a circle. Here
+// each edge is translated by `d` along its own inward normal and the new vertices are the
+// intersections of consecutive offset lines — exact for any convex polygon, which is what
+// the 5 mm non-scoring border of the IPSC face needs.
+function offsetConvexInward(pts, d) {
+    const n = pts.length;
+    // ⚠️ The sign of the signed area alone got this backwards: with the vertices listed
+    // clockwise on screen (y down) it offset the polygon OUTWARDS, growing the 450 x 570
+    // face to 460 x 580. Orient the normal against the CENTROID instead — it cannot be
+    // fooled by the winding order, and a self-check would only have caught it after the
+    // fact.
+    const gx = pts.reduce((a, p) => a + p[0], 0) / n;
+    const gy = pts.reduce((a, p) => a + p[1], 0) / n;
+    const edges = pts.map((p, i) => {
+        const q = pts[(i + 1) % n];
+        const dx = q[0] - p[0], dy = q[1] - p[1];
+        const L = Math.hypot(dx, dy);
+        let nx = dy / L, ny = -dx / L;
+        // Point the normal towards the centroid.
+        const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
+        if ((gx - mx) * nx + (gy - my) * ny < 0) { nx = -nx; ny = -ny; }
+        return { px: p[0] + nx * d, py: p[1] + ny * d, dx, dy };
+    });
+    const out = [];
+    for (let i = 0; i < n; i++) {
+        const A = edges[(i - 1 + n) % n], B = edges[i];
+        const det = A.dx * B.dy - A.dy * B.dx;
+        if (Math.abs(det) < 1e-9) { out.push([B.px, B.py]); continue; }
+        const t = ((B.px - A.px) * B.dy - (B.py - A.py) * B.dx) / det;
+        out.push([A.px + A.dx * t, A.py + A.dy * t]);
+    }
+    return out;
+}
+
 function drawPolyAt(doc, cx, cy, s, pts, style) {
     const P = pts.map(p => [cx + p[0] * s, cy + p[1] * s]);
     const rel = P.slice(1).map((p, i) => [p[0] - P[i][0], p[1] - P[i][1]]);
@@ -452,41 +488,67 @@ const SIL_SCALE_SETS = {
 // Each entry : w/h = full-scale bounding box (mm) ; scaleSet = which print-scale list applies ;
 // draw(doc, cx, cy, s) renders at scale s.
 const SILHOUETTE = {
-    // IPSC Classic ("Metric") cardboard target : ~450 x 590 mm. Zones A (center + head), C, D.
+    // IPSC target, from the rulebook — NOT a reconstruction.
+    // IPSC Handgun Competition Rules, January 2026 Edition, Appendix B2 "IPSC Target".
+    // A 450 x 570 mm octagon: top and bottom edges 150 mm wide, full width reached
+    // 190 mm from each end (the 19 cm / 38 cm dimensions, symmetric over 57 cm), and a
+    // 5 mm non-scoring border around the entire target.
+    //
+    // Zone geometry read off the same appendix and cross-checked by MEASURING the
+    // rendered page — centre and scale pinned on the 45 cm width, then the boundaries
+    // sampled row by row. A is 50 mm wide at its top edge 25 mm down, widens to 150 mm
+    // at 190 mm, runs parallel to 275 mm, then tapers to a 50 mm bottom edge at 350 mm.
+    // C starts at the target's top edge, widens to 300 mm at 190 mm, runs parallel to
+    // 335 mm, then tapers to a 100 mm bottom edge at 450 mm.
+    //
+    // ⚠️ WHAT THIS REPLACED, AND WHY IT MATTERED. Until 2026-08-22 this face was a
+    // 450 x 590 mm ten-vertex outline with a narrow top and a wider, asymmetric bottom
+    // — closer to the USPSA Metric target than to the IPSC one — and its A zone was two
+    // rectangles (body + head). The IPSC target has neither a head nor rectangular
+    // zones. Wrong by 20 mm in height and wrong in shape, on a face people print and
+    // shoot at. It was labelled "reconstruction", which excuses a millimetre, not a
+    // different target.
     ipsc: {
         titleKey: "ipsc",
-        w: 450, h: 590, scaleSet: 'generic',
+        w: 450, h: 570, scaleSet: 'generic',
         scoring: { type: 'zones', rings: null, zones: ['A', 'C', 'D'], inner_ten: false },
         draw: function (doc, cx, cy, s) {
-            // Outline (D boundary), symmetric, y down, center at origin.
+            // y down, centre at origin. The appendix measures from the top-left corner
+            // of the 450 x 570 envelope; these are those cotes minus (225, 285).
             const outline = [
-                [-75, -295], [75, -295], [75, -145], [225, -75], [225, 175],
-                [150, 295], [-150, 295], [-225, 175], [-225, -75], [-75, -145]
+                [-75, -285], [75, -285], [225, -95], [225, 95],
+                [75, 285], [-75, 285], [-225, 95], [-225, -95]
             ];
-            doc.setLineWidth(0.5);
+            const cZone = [
+                [-75, -285], [75, -285], [150, -95], [150, 50],
+                [50, 165], [-50, 165], [-150, 50], [-150, -95]
+            ];
+            const aZone = [
+                [-25, -260], [25, -260], [75, -95], [75, -10],
+                [25, 65], [-25, 65], [-75, -10], [-75, -95]
+            ];
+
             doc.setDrawColor(0, 0, 0);
+            doc.setLineWidth(0.5);
             drawPolyAt(doc, cx, cy, s, outline, 'S');
 
-            // C/D boundary : an inner silhouette enclosing the C zone (upper torso + head).
-            const cZone = [
-                [-55, -270], [55, -270], [55, -160], [170, -55], [170, 150],
-                [-170, 150], [-170, -55], [-55, -160]
-            ];
+            // The 5 mm non-scoring border, which the previous face did not draw at all.
+            doc.setLineWidth(0.25);
+            drawPolyAt(doc, cx, cy, s, offsetConvexInward(outline, 5), 'S');
+
             doc.setLineWidth(0.4);
             drawPolyAt(doc, cx, cy, s, cZone, 'S');
+            drawPolyAt(doc, cx, cy, s, aZone, 'S');
 
-            // A zone : body rectangle + head rectangle.
-            doc.rect(cx - 75 * s, cy - 60 * s, 150 * s, 210 * s, 'S'); // body A
-            doc.rect(cx - 45 * s, cy - 255 * s, 90 * s, 95 * s, 'S');  // head A
-
-            // Zone labels.
             doc.setTextColor(0, 0, 0);
             doc.setFont("helvetica", "bold");
             doc.setFontSize(Math.max(5, 14 * s));
             const opt = { align: "center", baseline: "middle" };
-            doc.text("A", cx, cy + 45 * s, opt);
-            doc.text("C", cx - 130 * s, cy + 60 * s, opt);
-            doc.text("D", cx - 190 * s, cy + 60 * s, opt);
+            doc.text("A", cx, cy - 50 * s, opt);
+            doc.text("C", cx - 110 * s, cy - 20 * s, opt);
+            doc.text("D", cx - 185 * s, cy - 20 * s, opt);
+            doc.text("C", cx + 110 * s, cy - 20 * s, opt);
+            doc.text("D", cx + 185 * s, cy - 20 * s, opt);
         }
     },
     // IDPA cardboard target : ~457 x 762 mm (18 x 30 in). -0 body 8" circle, -0 head 4" circle,
