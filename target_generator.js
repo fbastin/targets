@@ -15,7 +15,7 @@ const I18N = {
         biathlon_prone: "Biathlon 50 m — couché (mouche Ø 45 mm)",
         biathlon_standing: "Biathlon 50 m — debout (mouche Ø 115 mm)",
         ipsc: "IPSC (annexe B2 du règlement)",
-        idpa: "IDPA (reconstruction)",
+        idpa: "Silhouette type IDPA (entraînement)",
         ft_title: "Field Target — kill zone Ø",
         ft_note: "La kill zone est imprimée à sa taille réelle (échelle 100 %). La difficulté dépend de la distance de tir.",
         crop_note: "centre uniquement (échelle 100 %)",
@@ -49,7 +49,8 @@ const I18N = {
         imssu_scale_3_8: "3/8 — pistolet PC (9,52 mm)",
         imssu_scale_1_5: "1/5 — carabine PC (5,08 mm)",
         imssu_scale_1_10: "1/10 — air comprimé (2,54 mm)",
-        sil_note_generic: "La cible <strong>IPSC</strong> (450 × 570 mm) est tracée d’après les cotes de l’annexe B2 du règlement IPSC Handgun, édition janvier 2026. Le contour <strong>IDPA</strong> (≈ 457 × 762 mm) reste une <strong>reconstruction</strong> à partir des cotes publiées — fidélité géométrique proche, non garantie au mm. En taille réelle, la cible dépasse l'A4 : utilisez un grand format, la mosaïque, ou une échelle réduite.",
+        sil_note_ipsc: "Cible <strong>IPSC</strong> (450 × 570 mm), tracée d’après les cotes de l’annexe B2 du règlement IPSC Handgun, édition janvier 2026 : octogone, bords supérieur et inférieur de 150 mm, pleine largeur à 190 mm de chaque extrémité, bordure non comptée de 5 mm. En taille réelle, la cible dépasse l'A4 : utilisez un grand format, la mosaïque, ou une échelle réduite.",
+        sil_note_idpa: "⚠️ <strong>Silhouette d'entraînement, pas la cible officielle.</strong> Le règlement IDPA ne publie <strong>aucune dimension</strong> : sa règle 4.12.1 renvoie aux fabricants licenciés, et les cotes qui circulent chez eux ne concordent pas entre elles (18 × 30, 18¼ × 30¾, 18¾ × 30¾ pouces). Ce contour en est une approximation, volontairement non affinée — le dessin officiel est un produit sous licence. <strong>Inutilisable en match</strong>, où seule une cible officielle achetée chez un fabricant licencié est admise. En taille réelle, la cible dépasse l'A4 : utilisez un grand format, la mosaïque, ou une échelle réduite.",
         sil_note_imssu: "Contours <strong>relevés sur les planches du règlement IMSSU 2025</strong>, dont le quadrillage au pouce sert de règle graduée — le règlement ne donne aucune cote chiffrée. Pleine grandeur : poule 314 × 263, cochon 544 × 342, dindon 461 × 562, bélier 791 × 651 mm. L'échelle correspond à la catégorie d'arme ; les échelles réduites (1/5, 1/10) servent à s'entraîner à courte distance. En taille réelle la silhouette dépasse l'A4 : utilisez un grand format ou la mosaïque."
     },
     en: {
@@ -63,7 +64,7 @@ const I18N = {
         biathlon_prone: "Biathlon 50m — prone (Ø 45 mm)",
         biathlon_standing: "Biathlon 50m — standing (Ø 115 mm)",
         ipsc: "IPSC (rulebook Appendix B2)",
-        idpa: "IDPA (reconstruction)",
+        idpa: "IDPA-type silhouette (practice)",
         ft_title: "Field Target — kill zone Ø",
         ft_note: "The kill zone is printed at true size (100% scale). Difficulty comes from the shooting distance.",
         crop_note: "center only (100% scale)",
@@ -97,7 +98,8 @@ const I18N = {
         imssu_scale_3_8: "3/8 — smallbore pistol (9.52 mm)",
         imssu_scale_1_5: "1/5 — smallbore rifle (5.08 mm)",
         imssu_scale_1_10: "1/10 — air (2.54 mm)",
-        sil_note_generic: "The <strong>IPSC</strong> face (450 × 570 mm) is drawn from the dimensions of Appendix B2 of the IPSC Handgun rules, January 2026 Edition. The <strong>IDPA</strong> outline (≈ 457 × 762 mm) remains a <strong>reconstruction</strong> from published specifications — close geometric fidelity, not guaranteed to the mm. At real size, the target exceeds A4: use a large format, tiling, or a reduced scale.",
+        sil_note_ipsc: "<strong>IPSC</strong> target (450 × 570 mm), drawn from the dimensions of Appendix B2 of the IPSC Handgun rules, January 2026 Edition: an octagon with 150 mm top and bottom edges, full width reached 190 mm from each end, and a 5 mm non-scoring border. At real size the target exceeds A4: use a large format, tiling, or a reduced scale.",
+        sil_note_idpa: "⚠️ <strong>A practice silhouette, not the official target.</strong> The IDPA rulebook publishes <strong>no dimensions</strong>: rule 4.12.1 defers to licensed manufacturers, and the figures they quote disagree with one another (18 × 30, 18¼ × 30¾, 18¾ × 30¾ inches). This outline is an approximation, deliberately not refined — the official drawing is a licensed product. <strong>Not usable in a match</strong>, where only an official target from a licensed manufacturer is allowed. At real size the target exceeds A4: use a large format, tiling, or a reduced scale.",
         sil_note_imssu: "Outlines <strong>measured off the IMSSU 2025 rulebook plates</strong>, whose one-inch grid is the only ruler available — the rules state no figures. Full scale: chicken 314 × 263, pig 544 × 342, turkey 461 × 562, ram 791 × 651 mm. The scale matches the firearm category ; reduced scales (1/5, 1/10) are meant for short-distance practice. At real size the silhouette exceeds A4: use a large format or tiling."
     }
 };
@@ -509,7 +511,7 @@ const SILHOUETTE = {
     // shoot at. It was labelled "reconstruction", which excuses a millimetre, not a
     // different target.
     ipsc: {
-        titleKey: "ipsc",
+        titleKey: "ipsc", noteKey: "sil_note_ipsc",
         w: 450, h: 570, scaleSet: 'generic',
         scoring: { type: 'zones', rings: null, zones: ['A', 'C', 'D'], inner_ten: false },
         draw: function (doc, cx, cy, s) {
@@ -551,10 +553,23 @@ const SILHOUETTE = {
             doc.text("D", cx + 185 * s, cy - 20 * s, opt);
         }
     },
-    // IDPA cardboard target : ~457 x 762 mm (18 x 30 in). -0 body 8" circle, -0 head 4" circle,
-    // -1 zone around the chest, -3 the remainder. Head is a 6" zone.
+    // Silhouette de TYPE IDPA — approximation d'entraînement, pas la cible officielle.
+    //
+    // ⚠️ NE PAS CHERCHER À L'AFFINER. Le règlement IDPA (édition 2026.2, archivé dans
+    // admin-data/reglements/) ne publie AUCUNE dimension de cible : sa règle 4.12.1 dit
+    // que les cibles « must be Official IDPA cardboard targets, available from licensed
+    // IDPA target manufacturers ». Le dessin est licencié, c'est le produit. Les cotes
+    // qui circulent chez les fabricants ne concordent d'ailleurs pas entre elles
+    // (18 x 30, 18¼ x 30¾, 18¾ x 30¾ pouces), et les zones -0 sont données tantôt à 6,
+    // tantôt à 8 pouces.
+    //
+    // Viser la fidélité reviendrait donc à fabriquer gratuitement le produit d'un autre,
+    // ce que la licence existe précisément pour encadrer. L'approximation est ici la
+    // position correcte, pas un pis-aller — à la différence de l'IPSC, dont les cotes
+    // sont publiées et où s'en écarter était une faute (cf. le commentaire de `ipsc`).
+    // ~457 x 762 mm, -0 poitrine 8", -0 tête 4", -1 autour du torse, -3 le reste.
     idpa: {
-        titleKey: "idpa",
+        titleKey: "idpa", noteKey: "sil_note_idpa",
         w: 457, h: 762, scaleSet: 'generic',
         scoring: { type: 'zones', rings: null, zones: ['-0', '-1', '-3'], inner_ten: false },
         draw: function (doc, cx, cy, s) {
@@ -1040,7 +1055,12 @@ function populateSilhouetteScales(type) {
     updateSilhouetteScaleCustom();
 
     const note = document.getElementById('scale-note');
-    if (note) note.innerHTML = t(sil.scaleSet === 'imssu' ? 'sil_note_imssu' : 'sil_note_generic');
+    // La note suit la FACE, pas le jeu d'échelles. Elles étaient choisies sur
+    // `scaleSet`, si bien que l'IPSC et l'IDPA partageaient la même — or l'une est
+    // tracée d'après un règlement qui publie ses cotes, l'autre approxime une cible
+    // dont les cotes ne sont pas publiées. Les mettre dans la même phrase donnait à la
+    // seconde le crédit de la première.
+    if (note) note.innerHTML = t(sil.noteKey || (sil.scaleSet === 'imssu' ? 'sil_note_imssu' : 'sil_note_ipsc'));
 }
 
 // Displays the custom scale field when the corresponding option is chosen.
